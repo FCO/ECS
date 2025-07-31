@@ -13,7 +13,11 @@ my $world = world {
     component velocity => Vector2;
 
     entity "ball",
-        :position{ Vector2.init: (0 .. $screen-width).pick.Num, (0 .. $screen-height).pick.Num },
+        :position{
+            Vector2.init:
+                ($radius .. ($screen-width  - $radius)).pick.Num,
+                ($radius .. ($screen-height - $radius)).pick.Num,
+        },
         :velocity{ Vector2.init: (-300 .. 300).pick.Num, (-240 .. 240).pick.Num },
     ;
 
@@ -24,20 +28,23 @@ my $world = world {
         }
     }
 
-    system "bounce-floor", -> :$position! where { .y >= $screen-height - $radius }, :$velocity! where *.y > 1 {
+    system "bounce-floor", -> :$position! where { .y > $screen-height - $radius }, :$velocity! where *.y > 1 {
         $position.y = $screen-height - $radius;
         $velocity.y *= -.99;
         $velocity.x *= .9;
+        $position.y = $screen-height - $radius
     }
 
-    system "bounce-ceiling", -> :$position! where { .y <= $radius }, :$velocity! where *.y < -1 {
+    system "bounce-ceiling", -> :$position! where { .y < $radius }, :$velocity! where *.y < -1 {
         $position.y = $radius;
         $velocity.y *= -.99;
         $velocity.x *= .9;
+        $position.y = $radius
     }
 
     system "bounce-wall", -> :$position! where { .x < $radius || .x > $screen-width - $radius }, :$velocity! {
         $velocity.x *= -.99;
+        $position.x = $position.x < $radius ?? $radius !! $screen-width - $radius
     }
 
     system "gravity", -> :$velocity! {
@@ -55,10 +62,8 @@ my $world = world {
             my $dy   = $pos1.y - $pos2.y;
             my $dist = sqrt( $dx² + $dy² );
 
-            if 0 < $dist <= 2 * $radius {
+            if 0 < $dist < 2 * $radius {
                 my $overlap = (2 * $radius - $dist) / 2;
-                my $overx = $dx / $dist;
-                my $overy = $dy / $dist;
 
                 my $norx = $dx / $dist;
                 my $nory = $dy / $dist;
