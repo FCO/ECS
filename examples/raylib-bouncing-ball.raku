@@ -53,6 +53,7 @@ my $world = world {
         }
     }
 
+    # TODO: fix collision logic
     system "collision", -> :position($pos1)! is rw, :velocity($vel1)! is rw {
         # Loop over the next entities...
         # for example, if the entities are 1, 2, 3; pos2 is 1, pos2 will iterate over 2 and 3
