@@ -33,12 +33,16 @@ method add-component(Mu, Str $name, ::Type Any:U) {
 
 method entities(Mu) { $!entities.Set }
 
-method add-entity(Mu $type, Str $name) {
+method add-entity(Mu $type, Str $name, @default-tags?, %default-components?) {
 	die "Entity '{ $name }' already defined." if $!entities{$name}:exists;
 	$!entities{$name} = True;
 
 	$type.^add_method: "new-{ $name }", my method (+@tags, *%pars) {
-		$.new-entity: $name, |@tags, |%pars
+		my (:@to-add, :@to-remove) := @tags.classify: { .starts-with("!") ?? "to-remove" !! "to-add" };
+		my @final-tags = ((@default-tags (|) @to-add) (-) @to-remove.map: *.substr: 1).keys;
+		my %components = %default-components.pairs.duckmap: -> (:$key, :value(&block)) { $key => block }
+
+		$.new-entity: $name, |@final-tags, |%components, |%pars
 	}
 }
 

@@ -1,6 +1,14 @@
 use Metamodel::ECS::WorldHOW;
 use ECS::Entity;
 
+sub term:<current-entity> is export {
+	ECS::Entity.new: id => $*ECS-ENTITY-ID, world => $*ECS-WORLD
+}
+
+sub term:<world-self> is export {
+	$*ECS-WORLD
+}
+
 sub world(&block) is export {
 	my $world = Metamodel::ECS::WorldHOW.new_type: :name<World>;
 	my $*ECS-WORLD := $world;
@@ -26,20 +34,23 @@ multi component(*%pars where *.elems == 1) is export {
 	component %pars.keys.head, %pars.values.head
 }
 
-sub entity(Str $entity) is export {
-	$*ECS-WORLD.^add-entity: $entity
+sub entity(Str $entity, +@default-tags, *%default-components) is export {
+	$*ECS-WORLD.^add-entity: $entity, @default-tags, %default-components
 }
 
-sub query(&block, |c) is export {
+multi query(&block, Bool :$after-current! where *.so, |c) is export {
+	my $id = current-entity.id;
+	query &block, :list[@*ECS-CURRENT-LIST.grep: * > $id], |c
+}
+
+multi query(&block, :@list!, |c) is export {
 	my $world    = $*ECS-WORLD;
 	my @params   = &block.signature.params;
 	my @names    = @params.grep({ .named && not .optional }).map: *.named_names.head;
 	my @tags     = @params.grep({ .positional && .constraint_list }).map: *.constraint_list.head;
 	my $count    = &block.count;
 	my @comps    = |@names, |("::tags::" if $count);
-	my $arch     = set(@comps);
-	my @ids      = $world.entity-ids-for-archetype($arch).keys;
-	for @ids -> UInt $index {
+	for @list -> UInt $index {
 		my %comps := @comps.map({ next if $_ eq '::tags::'; .Str => $world.components{.Str}[$index] }).Map;
 		my %tags  := $world.components<::tags::>[$index];
 		next unless @tags (<=) %tags;
@@ -48,6 +59,25 @@ sub query(&block, |c) is export {
 		my UInt    $*ECS-ENTITY-ID = $index;
 		block |@tags, |%comps
 	}
+}
+
+multi query(&block, |c) is export {
+	my $world    = $*ECS-WORLD;
+	my @params   = &block.signature.params;
+	my @names    = @params.grep({ .named && not .optional }).map: *.named_names.head;
+	my @tags     = @params.grep({ .positional && .constraint_list }).map: *.constraint_list.head;
+	my $count    = &block.count;
+	my @comps    = |@names, |("::tags::" if $count);
+	my $arch     = set(@comps);
+	my @ids      = $world.entity-ids-for-archetype($arch).keys;
+	my @*ECS-CURRENT-LIST := do for @ids -> UInt $index {
+		my %comps := @comps.map({ next if $_ eq '::tags::'; .Str => $world.components{.Str}[$index] }).Map;
+		my %tags  := $world.components<::tags::>[$index];
+		next unless @tags (<=) %tags;
+		next unless \(|@tags, |%comps) ~~ &block.signature;
+		$index
+	}
+	query &block, :list[@*ECS-CURRENT-LIST], |c
 }
 
 multi system(&block where *.?name, |c) is export {
@@ -67,14 +97,6 @@ multi system-group(Str $name, +@systems where { $*ECS-WORLD.^systems{@systems.al
 
 sub using-params(&block) is export {
 	block |$*ECS-SUBSIG
-}
-
-sub term:<current-entity> is export {
-	ECS::Entity.new: id => $*ECS-ENTITY-ID, world => $*ECS-WORLD
-}
-
-sub term:<world-self> is export {
-	$*ECS-WORLD
 }
 
 =begin pod

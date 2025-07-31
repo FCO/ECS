@@ -2,7 +2,7 @@ use Raylib::Bindings;
 use ECS;
 
 constant $screen-width  = 1024;
-constant $screen-height = 450;
+constant $screen-height = 600;
 constant $radius        = 10e0;
 init-window($screen-width, $screen-height, "Bouncing Ball");
 END close-window;
@@ -12,7 +12,10 @@ my $world = world {
     component position => Vector2;
     component velocity => Vector2;
 
-    entity "ball";
+    entity "ball",
+        :position{ Vector2.init: (0 .. $screen-width).pick.Num, (0 .. $screen-height).pick.Num },
+        :velocity{ Vector2.init: (-300 .. 300).pick.Num, (-240 .. 240).pick.Num },
+    ;
 
     system "move", -> :$position!, :$velocity! {
         using-params -> Num $delta {
@@ -33,7 +36,7 @@ my $world = world {
         $velocity.x *= .9;
     }
 
-    system "bounce-h", -> :$position! where { .x < $radius || .x > $screen-width - $radius }, :$velocity! {
+    system "bounce-wall", -> :$position! where { .x < $radius || .x > $screen-width - $radius }, :$velocity! {
         $velocity.x *= -.99;
     }
 
@@ -43,17 +46,47 @@ my $world = world {
         }
     }
 
-    system-group "physics", <move bounce-floor bounce-ceiling bounce-h gravity>;
+    system "collision", -> :position($pos1)! is rw, :velocity($vel1)! is rw {
+        # Loop over the next entities...
+        # for example, if the entities are 1, 2, 3; pos2 is 1, pos2 will iterate over 2 and 3
+        # then pos1 goes to 2, pos2 will be only 3.
+        query :after-current, -> :position($pos2)! is rw, :velocity($vel2)! is rw {
+            my $dx   = $pos1.x - $pos2.x;
+            my $dy   = $pos1.y - $pos2.y;
+            my $dist = sqrt( $dx² + $dy² );
+
+            if 0 < $dist <= 2 * $radius {
+                my $overlap = (2 * $radius - $dist) / 2;
+                my $overx = $dx / $dist;
+                my $overy = $dy / $dist;
+
+                my $norx = $dx / $dist;
+                my $nory = $dy / $dist;
+
+                $pos1.x += $overlap * $norx;
+                $pos1.y += $overlap * $nory;
+                $pos2.x += $overlap * $norx;
+                $pos2.y += $overlap * $nory;
+
+                my $dp =  ($vel2.x * $norx + $vel2.y * $nory) - ($vel1.x * $norx + $vel1.y * $nory);
+
+                $vel1.x += $dp * $norx;
+                $vel1.y += $dp * $nory;
+
+                $vel2.x -= $dp * $norx;
+                $vel2.y -= $dp * $nory;
+            }
+        }
+    }
+
+    system-group "physics", <move bounce-floor bounce-ceiling bounce-wall gravity collision>;
 
     system "draw", -> :$position! {
         draw-circle-v $position, $radius, init-red
     }
 }
 
-$world.new-ball:
-    :position(Vector2.init: $screen-width/2e0, $screen-height/2e0),
-    :velocity(Vector2.init: 300e0, 240e0),
-;
+$world.new-ball xx 20;
 
 until window-should-close {
     $world.physics: get-frame-time;
